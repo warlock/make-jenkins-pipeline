@@ -1,0 +1,57 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.40">
+  <actions/>
+  <description></description>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.83">
+    <script>#!/usr/bin/env groovy
+
+podTemplate(containers: [
+  containerTemplate(name: &apos;golang&apos;, image: &apos;golang&apos;, ttyEnabled: true, command: &apos;cat&apos;),
+  containerTemplate(name: &apos;docker&apos;, image: &apos;docker:stable-dind&apos;, ttyEnabled: true, command: &apos;cat&apos;, privileged: true)
+  ],
+  volumes: [
+    hostPathVolume(hostPath: &apos;/var/run/docker.sock&apos;, mountPath: &apos;/var/run/docker.sock&apos;),
+  ]) {
+
+  node(POD_LABEL) {
+  
+    stage(&apos;Get a Golang project&apos;) {
+      git url: &apos;https://github.com/warlock/jenkins-golang-play.git&apos;
+     
+      container(&apos;golang&apos;) {
+        stage(&apos;Build a Go project&apos;) {
+          sh &quot;&quot;&quot;
+          mkdir -p /go/src/github.com/warlock
+          ln -s `pwd` /go/src/github.com/warlock/jenkins-golang-play
+          cd /go/src/github.com/warlock/jenkins-golang-play
+          go build
+          &quot;&quot;&quot;
+        }
+
+        stage(&apos;Test Go project&apos;) {
+          sh &quot;&quot;&quot;
+          go test ./... -v -short
+          &quot;&quot;&quot;
+        }
+      }
+
+      container(&apos;docker&apos;) {
+        withCredentials([[$class: &apos;UsernamePasswordMultiBinding&apos;,
+          credentialsId: &apos;docker registry&apos;,
+          usernameVariable: &apos;DOCKER_HUB_USER&apos;,
+          passwordVariable: &apos;DOCKER_HUB_PASSWORD&apos;]]) {
+          sh &quot;&quot;&quot;
+            docker login -u ${DOCKER_HUB_USER} -p ${DOCKER_HUB_PASSWORD}
+            docker build -t js21/jenkins-golang-play:${BUILD_NUMBER} .
+            docker push js21/jenkins-golang-play:${BUILD_NUMBER}
+            &quot;&quot;&quot;
+        }
+      }
+    }
+  }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
